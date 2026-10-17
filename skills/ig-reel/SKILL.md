@@ -40,6 +40,23 @@ python3 beats.py script.txt --target 30     # timed beat sheet before you shoot
 4. If `~/.claude/instagram/swipe.md` exists, read it. `/ig-viral` writes that
    file, and it is the user's own evidence about which formulas are working in
    their niche right now. It beats the defaults in this file.
+5. If `~/.claude/instagram/auditoria.md` (or `audit.md`) exists, read it. It is
+   what `/ig-audit` found on the user's own posts: which themes, formulas and
+   lengths worked for this account. It beats both `swipe.md` and the defaults.
+
+## When the user brings their own script
+
+Do not rewrite it from scratch. Review it in this order and say what to change:
+
+1. **The hook.** Ask for two or three versions if they sent one. Run them
+   through `hookscore.py` (`--lang es` for Spanish). It catches bad hooks:
+   greetings, no number, too long. It does not pick between two decent ones.
+2. **Against the audit.** Does it use a theme and a formula that worked for this
+   account, or one the audit says to stop? Say which row of the audit it hits.
+3. **The body.** Run `beats.py` with their target length and fix every flag.
+4. **The end.** One ask, and a last line that echoes the hook.
+
+Then offer two or three alternative hooks from formulas they have not used.
 
 ## The shape
 

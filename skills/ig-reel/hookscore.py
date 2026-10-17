@@ -23,9 +23,14 @@ Instagram shows it to. Trust the retention graph over this script.
 
 Each check returns 0 to 100. Higher is better.
 
+Spanish hooks get their own word lists, number formats (37.075, 9,4%) and a
+faster speaking rate. The language is detected from the text, or forced with
+--lang. A batch is detected once, so every hook in it is ranked on one scale.
+
 Usage
   python3 hookscore.py hooks.txt              # one hook per line, ranked
   python3 hookscore.py --hook "I lost $18,000 on one missing contract."
+  python3 hookscore.py --hook "9 de cada 10 pegas esconden el sueldo." --lang es
   pbpaste | python3 hookscore.py -
   python3 hookscore.py hooks.txt --json
 """
@@ -109,38 +114,177 @@ DEALBREAKERS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Spanish. Same five checks, its own vocabulary. Written for Latin American
+# Spanish, Chilean in particular ("pega", "lucas"), and neutral enough for the
+# rest. Spoken Spanish runs faster in words per second than English and needs
+# more function words ("de", "en", "la") to say the same thing, so the length
+# window is wider and the clock runs at ~190 wpm instead of 165.
+
+WORD_RE_ES = re.compile(r"[\w$%'’-]+")
+NUMBER_RE_ES = re.compile(
+    r"\$\s?\d[\d.]*(?:,\d+)?"                        # $1.500.000
+    r"|\b\d[\d.]*(?:,\d+)?\s?"                       # 37.075, 9,4
+    r"(?:%|k\b|x\b|hrs?\b|horas?\b|min(?:utos)?\b"
+    r"|d[ií]as?\b|semanas?\b|mes(?:es)?\b|años?\b|lucas?\b|palos?\b|uf\b)?",
+    re.IGNORECASE)
+PROPER_RE_ES = re.compile(r"(?<!^)\b[A-ZÁÉÍÓÚÑ][a-záéíóúñü]{2,}\b")
+
+# "uno", "una" and "primero" are left out for the same reason "one" is.
+SPOKEN_NUMBERS_ES = {
+    "cero", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+    "diez", "once", "doce", "quince", "veinte", "treinta", "cuarenta",
+    "cincuenta", "sesenta", "setenta", "ochenta", "noventa", "cien", "ciento",
+    "cientos", "mil", "miles", "millón", "millon", "millones", "docena",
+    "mitad", "doble", "triple",
+}
+MONEY_WORDS_ES = {
+    "pesos", "dólares", "dolares", "lucas", "palos", "porciento", "sueldo",
+    "sueldos", "salario", "salarios", "arriendo", "plata", "ingresos",
+    "ganancia", "ganancias", "uf",
+}
+
+STAKES_ES = {
+    "deja", "dejes", "nunca", "jamás", "jamas", "mal", "error", "errores",
+    "perdí", "perdi", "pierdes", "perder", "perdiste", "cuesta", "costó",
+    "costo", "fracaso", "fracasé", "nadie", "no", "ni", "sin", "despedido",
+    "despidieron", "despidos", "borra", "borré", "eliminé", "reemplazó",
+    "reemplaza", "gratis", "pagué", "pagas", "cobran", "contrataron",
+    "contratan", "ahorré", "prohibido", "ilegal", "peor", "odio", "odiaba",
+    "desperdicio", "perdiendo", "estafa", "mentira", "mienten", "mintieron",
+    "verdad", "secreto", "oculto", "esconden", "esconde", "robó", "antes",
+    "hasta", "solo", "sólo", "pero", "excepto", "salvo", "problema", "riesgo",
+    "peligro", "cuidado", "arrepiento", "ojalá", "debería", "deberías",
+    "todavía", "aún", "ya", "versus", "vs", "contra", "realmente", "trampa",
+    "cayó", "cae", "caen", "cayeron", "caído", "cayendo", "bajó", "desplomó",
+    "desapareció", "murió", "muerto", "rechazan", "rechazaron",
+    "ignoran", "engaña", "vendieron", "primero", "basta", "olvida",
+}
+
+WEAK_OPENERS_ES = [
+    "hola", "holi", "oye", "bueno", "ok", "okey", "chicos", "chiquillos",
+    "amigos", "gente", "hoy", "en este", "en el video", "básicamente",
+    "honestamente", "escucha", "eh", "solo quería", "quiero", "quería",
+    "les quiero", "te quiero", "una de", "uno de", "has", "sabías",
+    "alguna vez", "hay", "esto es", "es que", "como", "cuando", "sabes",
+    "bienvenidos", "bienvenidas", "qué tal", "a ver",
+]
+
+IMPERATIVES_ES = {
+    "deja", "roba", "copia", "borra", "prueba", "mira", "lee",
+    "guarda", "usa", "arma", "haz", "escribe", "manda", "toma", "empieza",
+    "nunca", "siempre", "no", "pon", "revisa", "cambia", "postula",
+    "pregunta", "olvida", "sube", "agrega", "elimina", "busca", "evita",
+}
+
+# Spanish drops the pronoun, so "postulas a 10" talks to the viewer without
+# ever saying "tú". Second-person verbs are too varied to catch by ending
+# ("-as" also ends "ofertas"), so the common ones are listed.
+ADDRESS_ES = re.compile(
+    r"\b(tú|tu|tus|te|ti|contigo|usted|ustedes|vos|eres|estás|tienes"
+    r"|puedes|sabes|quieres|buscas|postulas|ganas|trabajas|necesitas|crees"
+    r"|haces|pones|mandas|pierdes|pagas|vives|llevas|ves|vas)\b")
+FIRST_PERSON_ES = re.compile(
+    r"\b(yo|mi|mis|me|nosotros|nosotras|nuestro|nuestra|llevo|tengo|veo"
+    r"|\w{3,}é)\b")                      # revisé, analicé, miré
+
+DEALBREAKERS_ES = [
+    (re.compile(r"(?i)^\s*[¿¡]?\s*(?:deja de scrollear|no scrollees|para de scrollear|no sigas bajando)"),
+     "Abre con \"deja de scrollear\". Pedir atención demuestra que no te la ganaste."),
+    (re.compile(r"(?i)\b(?:en este (?:video|reel)|en el video de hoy|te voy a mostrar|les voy a mostrar"
+                r"|hoy (?:te|les) traigo)\b"),
+     "Preámbulo de video. Bórralo y abre con el resultado."),
+    (re.compile(r"(?i)^\s*[¿¡]?\s*(?:hola|holi|qué tal|que tal|bienvenid)"),
+     "Saludo. Nadie entró al feed para que lo saluden."),
+    (HASHTAG_RE,
+     "Hashtag en el hook. Los hashtags van al final del caption, si es que van."),
+    (EMOJI_RE,
+     "Emoji en el hook. El texto en pantalla a tamaño de hook tiene espacio para palabras o para un emoji, no para ambos."),
+]
+
+# Accents are often skipped when typing ("desplomo", "pagan mas"), so Spanish
+# words are compared without them. The ñ stays: "año" and "ano" are not the
+# same word.
+_FOLD = str.maketrans("áéíóúüÁÉÍÓÚÜ", "aeiouuAEIOUU")
+
+
+def fold(s):
+    return s.translate(_FOLD)
+
+
+def _folded(items):
+    return type(items)(fold(x) for x in items)
+
+
+LANGS = {
+    "en": {
+        "word_re": WORD_RE, "number_re": NUMBER_RE, "proper_re": PROPER_RE,
+        "thousands": ",", "spoken": SPOKEN_NUMBERS, "money": MONEY_WORDS,
+        "stakes": STAKES, "weak": WEAK_OPENERS, "imperatives": IMPERATIVES,
+        "dealbreakers": DEALBREAKERS, "wps": 2.75, "max_words": 12,
+        "max_chars": 60, "fold": lambda s: s,
+    },
+    "es": {
+        "word_re": WORD_RE_ES, "number_re": NUMBER_RE_ES, "proper_re": PROPER_RE_ES,
+        "thousands": ".", "spoken": _folded(SPOKEN_NUMBERS_ES),
+        "money": _folded(MONEY_WORDS_ES), "stakes": _folded(STAKES_ES),
+        "weak": _folded(WEAK_OPENERS_ES), "imperatives": _folded(IMPERATIVES_ES),
+        "dealbreakers": DEALBREAKERS_ES, "wps": 3.2, "max_words": 14,
+        "max_chars": 70, "fold": fold,
+    },
+}
+
+ES_HINTS = {"de", "la", "el", "que", "en", "los", "las", "del", "por", "con",
+            "para", "una", "es", "se", "te", "tu", "y", "no", "más", "pero"}
+EN_HINTS = {"the", "of", "and", "to", "in", "is", "you", "your", "that", "it",
+            "for", "on", "with", "this", "my", "i", "was", "are", "but", "not"}
+
+
+def detect_lang(text):
+    """Spanish if it carries Spanish marks or more Spanish function words."""
+    if re.search(r"[ñ¿¡áéíóú]", text.lower()):
+        return "es"
+    toks = re.findall(r"\w+", text.lower())
+    es = sum(t in ES_HINTS for t in toks)
+    en = sum(t in EN_HINTS for t in toks)
+    return "es" if es > en else "en"
+
+
 def clamp(n):
     return max(0.0, min(100.0, n))
 
 
-def words(text):
+def words(text, p=LANGS["en"]):
     # "$18,000" is one word when it is spoken, so it is one word here too.
-    return WORD_RE.findall(re.sub(r"(?<=\d),(?=\d)", "", text))
+    # In Spanish the thousands separator is the dot: "37.075" is one word.
+    sep = re.escape(p["thousands"])
+    return p["word_re"].findall(re.sub(rf"(?<=\d){sep}(?=\d)", "", text))
 
 
-def check_length(text):
+def check_length(text, p=LANGS["en"]):
     """A hook has to land before the thumb moves. Roughly two seconds."""
-    w = words(text)
+    w = words(text, p)
     n = len(w)
-    secs = n / 2.75                      # ~165 words per minute, spoken
+    secs = n / p["wps"]                  # ~165 wpm in English, ~190 in Spanish
     chars = len(text.strip())
-    if 5 <= n <= 12:
+    top = p["max_words"]
+    if 5 <= n <= top:
         score = 100.0
     elif n < 5:
         score = clamp(100 - (5 - n) * 20)
     else:
-        score = clamp(100 - (n - 12) * 11)
-    if chars > 60:                       # two lines of big on-screen text
+        score = clamp(100 - (n - top) * 11)
+    if chars > p["max_chars"]:           # two lines of big on-screen text
         score -= 12
-    return clamp(score), f"{n} words, {chars} chars, ~{secs:.1f}s spoken (want 5-12 words)"
+    return clamp(score), f"{n} words, {chars} chars, ~{secs:.1f}s spoken (want 5-{top} words)"
 
 
-def check_specificity(text):
+def check_specificity(text, p=LANGS["en"]):
     """One concrete thing beats three abstract ones."""
-    nums = [n.strip() for n in NUMBER_RE.findall(text) if n.strip()]
-    propers = set(PROPER_RE.findall(text))
-    low = [w.lower().strip("'’") for w in words(text)]
-    spoken = [w for w in low if w in SPOKEN_NUMBERS or w in MONEY_WORDS]
+    nums = [n.strip() for n in p["number_re"].findall(text) if n.strip()]
+    propers = set(p["proper_re"].findall(text))
+    low = [p["fold"](w.lower().strip("'’")) for w in words(text, p)]
+    spoken = [w for w in low if w in p["spoken"] or w in p["money"]]
     hits = len(nums) + len(propers) + len(spoken)
     score = 15.0 if hits == 0 else clamp(45 + hits * 30)
     found = ", ".join(nums[:2] + sorted(propers)[:2] + spoken[:2])
@@ -148,10 +292,10 @@ def check_specificity(text):
                    " - no number, no name, nothing checkable"))
 
 
-def check_stakes(text):
+def check_stakes(text, p=LANGS["en"]):
     """Tension, cost, negation. Something the viewer might lose."""
-    w = [x.lower().strip("'’") for x in words(text)]
-    hits = [x for x in w if x in STAKES]
+    w = [p["fold"](x.lower().strip("'’")) for x in words(text, p)]
+    hits = [x for x in w if x in p["stakes"]]
     markers = sorted(set(hits))
     if re.search(r"\$\s?\d", text):
         markers.append("a price")
@@ -162,23 +306,30 @@ def check_stakes(text):
     return clamp(score), detail
 
 
-def check_frontload(text):
+def check_frontload(text, p=LANGS["en"]):
     """The interesting word cannot be in position nine."""
-    w = words(text)
+    w = words(text, p)
     if not w:
         return 0.0, "empty"
-    low = [x.lower().strip("'’") for x in w]
-    opener = " ".join(low[:2])
+    low = [p["fold"](x.lower().strip("'’")) for x in w]
     penalty = 0
     hit_opener = None
-    for weak in WEAK_OPENERS:
-        if opener.startswith(weak) or low[0] == weak:
+    if p is LANGS["en"]:
+        opener = " ".join(low[:2])
+        matches = lambda weak: opener.startswith(weak) or low[0] == weak
+    else:
+        # Whole words only, so "hay" does not catch "hayan" and "como" does
+        # not catch "comodín".
+        opener = " ".join(low[:3]) + " "
+        matches = lambda weak: opener.startswith(weak + " ")
+    for weak in p["weak"]:
+        if matches(weak):
             penalty, hit_opener = 30, weak
             break
     payload = None
     for i, token in enumerate(low):
-        if (token in STAKES or token in SPOKEN_NUMBERS or token in MONEY_WORDS
-                or NUMBER_RE.match(w[i]) or (i and PROPER_RE.match(w[i]))):
+        if (token in p["stakes"] or token in p["spoken"] or token in p["money"]
+                or p["number_re"].match(w[i]) or (i and p["proper_re"].match(w[i]))):
             payload = i
             break
     if payload is None:
@@ -197,15 +348,18 @@ def check_frontload(text):
     return clamp(base - penalty), detail
 
 
-def check_address(text):
+def check_address(text, p=LANGS["en"]):
     """Aimed at one viewer, or floating in the air."""
     low = text.lower()
-    w = [x.lower().strip("'’") for x in words(text)]
-    if re.search(r"\b(you|your|you're|youre|yourself)\b", low):
+    w = [p["fold"](x.lower().strip("'’")) for x in words(text, p)]
+    spanish = p is LANGS["es"]
+    you = ADDRESS_ES if spanish else re.compile(r"\b(you|your|you're|youre|yourself)\b")
+    me = FIRST_PERSON_ES if spanish else re.compile(r"\b(i|my|me|we|our)\b")
+    if you.search(low):
         return 100.0, "speaks to the viewer"
-    if w and w[0] in IMPERATIVES:
+    if w and w[0] in p["imperatives"]:
         return 90.0, f"imperative opener (\"{w[0]}\")"
-    if re.search(r"\b(i|my|me|we|our)\b", low):
+    if me.search(low):
         return 70.0, "first person, no viewer named"
     return 35.0, "third person, nobody in the room"
 
@@ -213,15 +367,16 @@ def check_address(text):
 CHECKS = ["LENGTH", "SPECIFICITY", "STAKES", "FRONTLOAD", "ADDRESS"]
 
 
-def run(text):
+def run(text, lang=None):
+    p = LANGS[lang or detect_lang(text)]
     results = {
-        "LENGTH": check_length(text),
-        "SPECIFICITY": check_specificity(text),
-        "STAKES": check_stakes(text),
-        "FRONTLOAD": check_frontload(text),
-        "ADDRESS": check_address(text),
+        "LENGTH": check_length(text, p),
+        "SPECIFICITY": check_specificity(text, p),
+        "STAKES": check_stakes(text, p),
+        "FRONTLOAD": check_frontload(text, p),
+        "ADDRESS": check_address(text, p),
     }
-    flags = [msg for pattern, msg in DEALBREAKERS if pattern.search(text)]
+    flags = [msg for pattern, msg in p["dealbreakers"] if pattern.search(text)]
     scores = [results[c][0] for c in CHECKS]
     # The weakest property caps the hook, same logic as detect.py: one bad
     # property is enough for the thumb to keep moving.
@@ -273,6 +428,8 @@ def main():
     ap.add_argument("input", nargs="?", default="-", help="file with one hook per line, or -")
     ap.add_argument("--hook", help="score a single hook given on the command line")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--lang", choices=["auto", "en", "es"], default="auto",
+                    help="language of the hooks (default: detect)")
     args = ap.parse_args()
 
     if args.hook:
@@ -284,9 +441,11 @@ def main():
         print("nothing to score", file=sys.stderr)
         sys.exit(2)
 
+    lang = detect_lang(" ".join(lines)) if args.lang == "auto" else args.lang
+
     payload = []
     for line in lines:
-        results, overall, verdict, flags = run(line)
+        results, overall, verdict, flags = run(line, lang)
         payload.append({
             "hook": line,
             "checks": {k: {"score": round(v[0], 1), "detail": v[1]} for k, v in results.items()},
@@ -301,7 +460,7 @@ def main():
         return
 
     if len(payload) == 1:
-        results, overall, verdict, flags = run(lines[0])
+        results, overall, verdict, flags = run(lines[0], lang)
         render_one(lines[0], results, overall, verdict, flags)
     else:
         render_table(sorted(payload, key=lambda r: -r["score"]))

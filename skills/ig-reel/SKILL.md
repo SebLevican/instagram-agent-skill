@@ -19,6 +19,7 @@ eyeball the hook and do not guess at the length.
 ```bash
 python3 hookscore.py hooks.txt              # rank your hook options
 python3 hookscore.py --hook "one line"      # score a single one
+python3 hookscore.py hooks.txt --lang es    # Spanish hooks (auto-detected too)
 python3 beats.py script.txt --target 30     # timed beat sheet before you shoot
 ```
 
